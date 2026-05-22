@@ -1,0 +1,6 @@
+{
+  "name": "Career Katta Task Manager",
+  "description": "Zero Pendency Workflow System. Ultra modern mobile UI styled with WhatsApp simplicity and premium enterprise SaaS aesthetics.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
