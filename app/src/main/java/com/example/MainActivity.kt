@@ -103,9 +103,17 @@ class MainActivity : ComponentActivity() {
 
 @Composable
 fun MainNavigation(viewModel: TaskViewModel) {
-    // Single view state switching - directly render the dashboard to fully bypass any auth screens
-    Box(modifier = Modifier.fillMaxSize()) {
-        DashboardScreen(viewModel = viewModel)
+    val currentUser by viewModel.currentUser.collectAsState()
+    var showSplash by remember { mutableStateOf(true) }
+
+    if (showSplash) {
+        SplashScreen(onLoadingFinished = { showSplash = false })
+    } else {
+        if (currentUser == null) {
+            com.example.ui.SignupScreen(viewModel = viewModel)
+        } else {
+            DashboardScreen(viewModel = viewModel)
+        }
     }
 }
 
@@ -1086,7 +1094,14 @@ fun DashboardScreen(viewModel: TaskViewModel) {
                 )
                 NavigationBarItem(
                     selected = false,
-                    onClick = { showAddTaskSheet = true },
+                    onClick = {
+                        val user = viewModel.currentUser.value
+                        if (user != null && user.role.equals("Employee", ignoreCase = true)) {
+                            android.widget.Toast.makeText(context, "Access Denied: Employees cannot create or assign tasks 🛡️", android.widget.Toast.LENGTH_LONG).show()
+                        } else {
+                            showAddTaskSheet = true
+                        }
+                    },
                     icon = { 
                         Box(
                              modifier = Modifier
@@ -1160,7 +1175,7 @@ fun DashboardScreen(viewModel: TaskViewModel) {
                 }
                 "Reports" -> {
                     DashboardReportsContent(
-                        allTasksList = allTasksList,
+                        allTasksList = tasks,
                         stats = stats,
                         onViewPerformance = { showPerformanceScreen = true }
                     )
@@ -1179,9 +1194,10 @@ fun DashboardScreen(viewModel: TaskViewModel) {
     // Modal Add Task Sheet
     if (showAddTaskSheet) {
         AddTaskDialog(
+            viewModel = viewModel,
             onDismiss = { showAddTaskSheet = false },
-            onConfirm = { title, desc, priority, category, due ->
-                viewModel.addTask(title, desc, priority, category, due)
+            onConfirm = { title, desc, priority, category, due, assignee ->
+                viewModel.addTask(title, desc, priority, category, due, assignee)
                 showAddTaskSheet = false
             }
         )
@@ -1309,6 +1325,7 @@ fun DashboardScreen(viewModel: TaskViewModel) {
         if (currentTask != null) {
             com.example.ui.TaskDiscussionScreen(
                 task = currentTask,
+                viewModel = viewModel,
                 onDismiss = { discussionTask = null },
                 onStatusUpdated = { nextStage ->
                     val updatedTask = currentTask.copy(
@@ -1339,6 +1356,20 @@ fun DashboardHomeContent(
     onWorkflowClick: (Task) -> Unit,
     onDiscussionClick: (Task) -> Unit
 ) {
+    val currentUser by viewModel.currentUser.collectAsState()
+    val allowedTasks = remember(allTasksList, currentUser) {
+        allTasksList.filter { task ->
+            if (currentUser != null && currentUser!!.role.equals("Employee", ignoreCase = true)) {
+                task.assignedTo.isNotBlank() && (
+                    task.assignedTo.equals(currentUser!!.name, ignoreCase = true) ||
+                    task.assignedTo.equals(currentUser!!.email, ignoreCase = true)
+                )
+            } else {
+                true
+            }
+        }
+    }
+
     LazyColumn(
         modifier = Modifier
             .fillMaxSize()
@@ -1453,14 +1484,14 @@ fun DashboardHomeContent(
                     modifier = Modifier.padding(bottom = 12.dp, start = 4.dp)
                 )
 
-                val total = allTasksList.size
-                val pending = allTasksList.count { !it.isCompleted }
-                val solvedToday = allTasksList.count { it.isCompleted && (it.dueDate.equals("Today", ignoreCase = true) || it.dueDate.equals("Yesterday", ignoreCase = true)) }
-                val todayTasks = allTasksList.count { it.dueDate.equals("Today", ignoreCase = true) }
+                val total = allowedTasks.size
+                val pending = allowedTasks.count { !it.isCompleted }
+                val solvedToday = allowedTasks.count { it.isCompleted && (it.dueDate.equals("Today", ignoreCase = true) || it.dueDate.equals("Yesterday", ignoreCase = true)) }
+                val todayTasks = allowedTasks.count { it.dueDate.equals("Today", ignoreCase = true) }
                 val pendencyPercentage = if (total > 0) (pending.toFloat() / total * 100f).toInt() else 0
                 val zeroPendencyIndex = 100 - pendencyPercentage
                 val performanceScore = if (total > 0) ((stats.completed.toFloat() / total * 80) + 20).toInt() else 100
-                val delayedTasks = allTasksList.count { !it.isCompleted && (it.dueDate.equals("Yesterday", ignoreCase = true) || it.dueDate.contains("Yesterday", ignoreCase = true)) }
+                val delayedTasks = allowedTasks.count { !it.isCompleted && (it.dueDate.equals("Yesterday", ignoreCase = true) || it.dueDate.contains("Yesterday", ignoreCase = true)) }
 
                 Column(verticalArrangement = Arrangement.spacedBy(10.dp)) {
                     Row(
@@ -1538,7 +1569,7 @@ fun DashboardHomeContent(
 
         // Minimal Canvas velocity graph
         item {
-            WorkloadVelocityGraph(allTasksList)
+            WorkloadVelocityGraph(allowedTasks)
         }
 
         // Search Bar Section
@@ -3053,8 +3084,9 @@ fun EmptyStateSection(hasFilters: Boolean) {
 // ----------------- ADD TASK DIALOG (CLEAN BOTTOM POPUP ACTION) -----------------
 @Composable
 fun AddTaskDialog(
+    viewModel: TaskViewModel,
     onDismiss: () -> Unit,
-    onConfirm: (String, String, String, String, String) -> Unit
+    onConfirm: (String, String, String, String, String, String) -> Unit
 ) {
     var currentStep by remember { mutableStateOf(1) }
     
@@ -3075,13 +3107,16 @@ fun AddTaskDialog(
     var showToast by remember { mutableStateOf(false) }
     var toastMessage by remember { mutableStateOf("") }
 
-    val teamList = listOf(
-        "Bhavesh Patil" to "BP",
-        "Amit Sharma" to "AS",
-        "Priya Nair" to "PN",
-        "Sachin Kale" to "SK",
-        "Karan Johar" to "KJ"
-    )
+    val registeredEmployees by viewModel.registeredEmployees.collectAsState()
+    val teamList = registeredEmployees.map { emp ->
+        val initials = emp.name.split(" ")
+            .map { it.trim() }
+            .filter { it.isNotEmpty() }
+            .mapNotNull { it.firstOrNull()?.uppercaseChar() }
+            .joinToString("")
+            .take(2)
+        emp.name to (if (initials.isEmpty()) "EM" else initials)
+    }
 
     androidx.compose.ui.window.Dialog(
         onDismissRequest = onDismiss,
@@ -3872,7 +3907,7 @@ fun AddTaskDialog(
                                                 append("\nInstructions: Created via premium CKTM creation form system.")
                                             }
                                         }
-                                        onConfirm(title, compositeDescription, selectedPriority, selectedCategory, dueDate)
+                                        onConfirm(title, compositeDescription, selectedPriority, selectedCategory, dueDate, selectedAssignee)
                                     }
                                 }
                             },

@@ -12,5 +12,6 @@ data class Task(
     val isCompleted: Boolean = false, // Zero Pendency workflow tracks pending vs resolved
     val category: String = "Inbox", // Inbox, Work, Personal, Meeting
     val dueDate: String = "",   // E.g., "Today", "Tomorrow", "May 25"
+    val assignedTo: String = "", // Stores the name/email of the assigned employee
     val createdAt: Long = System.currentTimeMillis()
 )

@@ -76,6 +76,7 @@ data class ReplyReference(
 @Composable
 fun TaskDiscussionScreen(
     task: Task,
+    viewModel: TaskViewModel,
     onDismiss: () -> Unit,
     onStatusUpdated: (String) -> Unit = {}
 ) {
@@ -84,6 +85,13 @@ fun TaskDiscussionScreen(
 
     var searchQuery by remember { mutableStateOf("") }
     var isSearching by remember { mutableStateOf(false) }
+
+    var activeChatTarget by remember { mutableStateOf<UserProfile?>(null) }
+    var directChatsMap by remember {
+        mutableStateOf(
+            mapOf<String, List<ChatMessage>>()
+        )
+    }
 
     // Dropdown settings menu
     var showMenu by remember { mutableStateOf(false) }
@@ -243,11 +251,28 @@ fun TaskDiscussionScreen(
         )
     }
 
-    // Filtered messages
-    val filteredMessages = if (searchQuery.trim().isEmpty()) {
+    val activeMessages = if (activeChatTarget == null) {
         messagesList
     } else {
-        messagesList.filter {
+        directChatsMap[activeChatTarget!!.email] ?: listOf(
+            ChatMessage(
+                id = "welcome_${activeChatTarget!!.email}",
+                senderName = activeChatTarget!!.name,
+                senderInitials = activeChatTarget!!.name.split(" ").map { it.trim() }.filter { it.isNotEmpty() }.mapNotNull { it.firstOrNull()?.uppercaseChar() }.joinToString("").take(2),
+                senderAvatarBg = Color(0xFFE0F2FE),
+                senderTitleColor = Color(0xFF8B5CF6),
+                isUser = false,
+                text = "Hi! This is ${activeChatTarget!!.name} (${activeChatTarget!!.role}). Let's chat about our tasks! My phone is ${activeChatTarget!!.phone} and email is ${activeChatTarget!!.email}.",
+                time = "Just Now"
+            )
+        )
+    }
+
+    // Filtered messages
+    val filteredMessages = if (searchQuery.trim().isEmpty()) {
+        activeMessages
+    } else {
+        activeMessages.filter {
             it.text.contains(searchQuery, ignoreCase = true) ||
             it.senderName.contains(searchQuery, ignoreCase = true) ||
             it.attachmentName.contains(searchQuery, ignoreCase = true) ||
@@ -292,40 +317,95 @@ fun TaskDiscussionScreen(
             replyTo = activeReplyToMessage?.let { ReplyReference(it.senderName, it.text) },
             isRead = false
         )
-        messagesList = messagesList + newMsg
-        currentInputText = ""
-        activeReplyToMessage = null
-        scrollToBottom()
-
-        // Double ticks visual animation feedback mock delay
-        coroutineScope.launch {
-            delay(1500)
-            messagesList = messagesList.map {
-                if (it.id == newMsg.id) it.copy(isRead = true) else it
-            }
-            triggerToast("Deliveries ticked blue ✔️")
-        }
-
-        // Realistic automated replies
-        coroutineScope.launch {
-            delay(3000)
-            val responseText = when (txt.lowercase()) {
-                "hello", "hi", "hey" -> "Hello! How can I assist with ${task.title} design assets today?"
-                "looks perfect", "perfect now", "looks great" -> "Glad we got it customized appropriately! I will inform key departments."
-                else -> "Got it! Adding this pointer to the Scrum agenda for our Q2 sync."
-            }
-            val replyNow = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(java.util.Date())
-            messagesList = messagesList + ChatMessage(
-                id = "auto_reply_${System.currentTimeMillis()}",
-                senderName = "Kiran Madam",
-                senderInitials = "KM",
-                senderAvatarBg = Color(0xFFFEF3C7),
-                senderTitleColor = Color(0xFF0369A1),
-                isUser = false,
-                text = responseText,
-                time = replyNow
-            )
+        
+        if (activeChatTarget == null) {
+            messagesList = messagesList + newMsg
+            currentInputText = ""
+            activeReplyToMessage = null
             scrollToBottom()
+
+            // Double ticks visual animation feedback mock delay
+            coroutineScope.launch {
+                delay(1500)
+                messagesList = messagesList.map {
+                    if (it.id == newMsg.id) it.copy(isRead = true) else it
+                }
+                triggerToast("Deliveries ticked blue ✔️")
+            }
+
+            // Realistic automated replies
+            coroutineScope.launch {
+                delay(3000)
+                val responseText = when (txt.lowercase()) {
+                    "hello", "hi", "hey" -> "Hello! How can I assist with ${task.title} design assets today?"
+                    "looks perfect", "perfect now", "looks great" -> "Glad we got it customized appropriately! I will inform key departments."
+                    else -> "Got it! Adding this pointer to the Scrum agenda for our Q2 sync."
+                }
+                val replyNow = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(java.util.Date())
+                messagesList = messagesList + ChatMessage(
+                    id = "auto_reply_${System.currentTimeMillis()}",
+                    senderName = "Kiran Madam",
+                    senderInitials = "KM",
+                    senderAvatarBg = Color(0xFFFEF3C7),
+                    senderTitleColor = Color(0xFF0369A1),
+                    isUser = false,
+                    text = responseText,
+                    time = replyNow
+                )
+                scrollToBottom()
+            }
+        } else {
+            val target = activeChatTarget!!
+            val key = target.email
+            val currentList = directChatsMap[key] ?: emptyList()
+            directChatsMap = directChatsMap + (key to (currentList + newMsg))
+            currentInputText = ""
+            activeReplyToMessage = null
+            scrollToBottom()
+
+            // Simulation of Real-time direct chat typing & reply from team member
+            coroutineScope.launch {
+                delay(1000)
+                // Mark user sent message as read
+                val currentDirects = directChatsMap[key] ?: emptyList()
+                directChatsMap = directChatsMap + (key to currentDirects.map {
+                    if (it.id == newMsg.id) it.copy(isRead = true) else it
+                })
+                triggerToast("${target.name} is typing... 💬")
+                
+                delay(1500)
+                val replyText = when {
+                    txt.contains("hi", ignoreCase = true) || txt.contains("hello", ignoreCase = true) -> {
+                        "Hello! Team member ${target.name} here. Ready to collaborate on Career Katta tasks! 🚀"
+                    }
+                    txt.contains("status", ignoreCase = true) || txt.contains("update", ignoreCase = true) -> {
+                        "I'm currently updating the task status. Please check the dashboard under my reports tab!"
+                    }
+                    txt.contains("phone", ignoreCase = true) || txt.contains("call", ignoreCase = true) -> {
+                        "You can call me at ${target.phone} any time to discuss our task zero pendency targets."
+                    }
+                    else -> {
+                        "Thanks for your message! As an active ${target.role} at Career Katta, I'm working on task pendency. Let's close this out soon!"
+                    }
+                }
+                
+                val replyMsg = ChatMessage(
+                    id = "bot_msg_${System.currentTimeMillis()}",
+                    senderName = target.name,
+                    senderInitials = target.name.split(" ").map { it.trim() }.filter { it.isNotEmpty() }.mapNotNull { it.firstOrNull()?.uppercaseChar() }.joinToString("").take(2),
+                    senderAvatarBg = Color(0xFFFCE7F3),
+                    senderTitleColor = Color(0xFFDB2777),
+                    isUser = false,
+                    text = replyText,
+                    time = java.text.SimpleDateFormat("hh:mm a", java.util.Locale.getDefault()).format(java.util.Date()),
+                    type = MessageType.TEXT
+                )
+                
+                val updatedDirects = directChatsMap[key] ?: emptyList()
+                directChatsMap = directChatsMap + (key to (updatedDirects + replyMsg))
+                delay(100)
+                scrollToBottom()
+            }
         }
     }
 
@@ -573,6 +653,129 @@ fun TaskDiscussionScreen(
                             fontWeight = FontWeight.Black,
                             color = Color(0xFFEF4444)
                         )
+                    }
+                }
+
+                // ----------------- DYNAMIC REGISTERED ENTITIES (CHANNELS) ROW -----------------
+                val registeredUsers by viewModel.registeredEmployees.collectAsState()
+                
+                Column(
+                    modifier = Modifier
+                        .fillMaxWidth()
+                        .background(if (isDark) Color(0xFF1F2C34) else Color(0xFFF1F5F9))
+                        .padding(vertical = 8.dp)
+                ) {
+                    Text(
+                        text = "DIRECT WORKSPACE CHATS (REAL-TIME)",
+                        fontSize = 10.sp,
+                        fontWeight = FontWeight.ExtraBold,
+                        color = if (isDark) Color(0xFFA1A1AA) else Color(0xFF475569),
+                        modifier = Modifier.padding(start = 16.dp, end = 16.dp, bottom = 6.dp),
+                        letterSpacing = 1.sp
+                    )
+                    
+                    Row(
+                        modifier = Modifier
+                            .fillMaxWidth()
+                            .horizontalScroll(rememberScrollState())
+                            .padding(horizontal = 14.dp),
+                        horizontalArrangement = Arrangement.spacedBy(10.dp),
+                        verticalAlignment = Alignment.CenterVertically
+                    ) {
+                        // Option 1: GENERAL Task Channel
+                        val isGroupSelected = activeChatTarget == null
+                        Column(
+                            horizontalAlignment = Alignment.CenterHorizontally,
+                            modifier = Modifier
+                                .clickable { activeChatTarget = null }
+                                .padding(4.dp)
+                        ) {
+                            Box(
+                                contentAlignment = Alignment.Center,
+                                modifier = Modifier
+                                    .size(46.dp)
+                                    .clip(CircleShape)
+                                    .background(if (isGroupSelected) Color(0xFF2563EB) else (if (isDark) Color(0xFF2A3942) else Color(0xFFE2E8F0)))
+                                    .border(if (isGroupSelected) 2.dp else 0.dp, Color.White, CircleShape)
+                            ) {
+                                Icon(
+                                    imageVector = Icons.Default.Groups,
+                                    contentDescription = "Task Group Chat",
+                                    tint = if (isGroupSelected) Color.White else (if (isDark) Color.White else Color(0xFF475569)),
+                                    modifier = Modifier.size(24.dp)
+                                )
+                            }
+                            Spacer(modifier = Modifier.height(3.dp))
+                            Text(
+                                text = "Group Chat",
+                                fontSize = 10.sp,
+                                fontWeight = if (isGroupSelected) FontWeight.ExtraBold else FontWeight.Normal,
+                                color = if (isGroupSelected) (if (isDark) Color.White else Color(0xFF2563EB)) else (if (isDark) Color(0xFFE2E8F0) else Color(0xFF475569)),
+                                maxLines = 1
+                            )
+                        }
+                        
+                        // Option 2...N: Registered Entities
+                        registeredUsers.forEach { user ->
+                            val isSelected = activeChatTarget?.email == user.email
+                            val initials = user.name.split(" ")
+                                .map { it.trim() }
+                                .filter { it.isNotEmpty() }
+                                .mapNotNull { it.firstOrNull()?.uppercaseChar() }
+                                .joinToString("")
+                                .take(2)
+                            val avatarBg = when (user.role) {
+                                "Super-admin" -> Color(0xFFFEF3C7)
+                                "Admin" -> Color(0xFFE0F2FE)
+                                else -> Color(0xFFFCE7F3)
+                            }
+                            val avatarTextColor = when (user.role) {
+                                "Super-admin" -> Color(0xFFB45309)
+                                "Admin" -> Color(0xFF0369A1)
+                                else -> Color(0xFFDB2777)
+                            }
+                            
+                            Column(
+                                horizontalAlignment = Alignment.CenterHorizontally,
+                                modifier = Modifier
+                                    .clickable { activeChatTarget = user }
+                                    .padding(4.dp)
+                            ) {
+                                Box(
+                                    modifier = Modifier
+                                        .size(46.dp)
+                                        .clip(CircleShape)
+                                        .background(if (isSelected) Color(0xFF2563EB) else avatarBg)
+                                        .border(if (isSelected) 2.dp else 0.dp, Color.White, CircleShape),
+                                    contentAlignment = Alignment.Center
+                                ) {
+                                    // Live dot indicator
+                                    Box(
+                                        modifier = Modifier
+                                            .align(Alignment.BottomEnd)
+                                            .size(10.dp)
+                                            .clip(CircleShape)
+                                            .background(Color(0xFF22C55E))
+                                            .border(1.5.dp, if (isSelected) Color(0xFF2563EB) else avatarBg, CircleShape)
+                                    )
+                                    
+                                    Text(
+                                        text = if (initials.isEmpty()) "EM" else initials,
+                                        fontSize = 12.sp,
+                                        fontWeight = FontWeight.Bold,
+                                        color = if (isSelected) Color.White else avatarTextColor
+                                    )
+                                }
+                                Spacer(modifier = Modifier.height(3.dp))
+                                Text(
+                                    text = user.name.substringBefore(" "),
+                                    fontSize = 10.sp,
+                                    fontWeight = if (isSelected) FontWeight.ExtraBold else FontWeight.Normal,
+                                    color = if (isSelected) (if (isDark) Color.White else Color(0xFF2563EB)) else (if (isDark) Color(0xFFE2E8F0) else Color(0xFF475569)),
+                                    maxLines = 1
+                                )
+                            }
+                        }
                     }
                 }
 

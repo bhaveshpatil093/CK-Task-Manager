@@ -55,6 +55,7 @@ fun ProfileAndSettingsScreen(
     val isDarkMode by viewModel.isDarkMode.collectAsState()
     val selectedLanguage by viewModel.selectedLanguage.collectAsState()
     val notificationsEnabled by viewModel.notificationsEnabled.collectAsState()
+    val currentUser by viewModel.currentUser.collectAsState()
 
     // Interactive Dialog Dialog State
     var showLanguageDialog by remember { mutableStateOf(false) }
@@ -71,6 +72,27 @@ fun ProfileAndSettingsScreen(
     var employeeId by remember { mutableStateOf("CKTM-2026") }
     var userDept by remember { mutableStateOf("IT Admin") }
     var userRole by remember { mutableStateOf("Administrator") }
+
+    LaunchedEffect(currentUser) {
+        currentUser?.let {
+            userName = it.name
+            userEmail = it.email
+            userRole = it.role
+            if (it.phone.isNotEmpty()) {
+                userPhone = it.phone
+            }
+            userDept = when (it.role) {
+                "Super-admin" -> "Executive Admin"
+                "Admin" -> "IT Admin"
+                else -> "Technical Employee"
+            }
+            userTeam = when (it.role) {
+                "Super-admin" -> "Board of Directors"
+                "Admin" -> "Task delegator group"
+                else -> "Dev & Operations Team"
+            }
+        }
+    }
 
     Scaffold(
         topBar = {
@@ -834,7 +856,8 @@ fun ProfileAndSettingsScreen(
                 Button(
                     onClick = {
                         showLogoutDialog = false
-                        triggerToast(context, "Disconnecting... Redirecting to guest session.")
+                        viewModel.logout()
+                        triggerToast(context, "Logged out successfully")
                     },
                     colors = ButtonDefaults.buttonColors(containerColor = Color(0xFFEF4444))
                 ) {
