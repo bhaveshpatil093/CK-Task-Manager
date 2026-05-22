@@ -82,6 +82,7 @@ fun TaskDiscussionScreen(
 ) {
     val coroutineScope = rememberCoroutineScope()
     val scrollState = rememberLazyListState()
+    val currentUser by viewModel.currentUser.collectAsState()
 
     var searchQuery by remember { mutableStateOf("") }
     var isSearching by remember { mutableStateOf(false) }
@@ -251,18 +252,19 @@ fun TaskDiscussionScreen(
         )
     }
 
-    val activeMessages = if (activeChatTarget == null) {
+    val currentTarget = activeChatTarget
+    val activeMessages = if (currentTarget == null) {
         messagesList
     } else {
-        directChatsMap[activeChatTarget!!.email] ?: listOf(
+        directChatsMap[currentTarget.email] ?: listOf(
             ChatMessage(
-                id = "welcome_${activeChatTarget!!.email}",
-                senderName = activeChatTarget!!.name,
-                senderInitials = activeChatTarget!!.name.split(" ").map { it.trim() }.filter { it.isNotEmpty() }.mapNotNull { it.firstOrNull()?.uppercaseChar() }.joinToString("").take(2),
+                id = "welcome_${currentTarget.email}",
+                senderName = currentTarget.name,
+                senderInitials = currentTarget.name.split(" ").map { it.trim() }.filter { it.isNotEmpty() }.mapNotNull { it.firstOrNull()?.uppercaseChar() }.joinToString("").take(2),
                 senderAvatarBg = Color(0xFFE0F2FE),
                 senderTitleColor = Color(0xFF8B5CF6),
                 isUser = false,
-                text = "Hi! This is ${activeChatTarget!!.name} (${activeChatTarget!!.role}). Let's chat about our tasks! My phone is ${activeChatTarget!!.phone} and email is ${activeChatTarget!!.email}.",
+                text = "Hi! This is ${currentTarget.name} (${currentTarget.role}). Let's chat about our tasks! My phone is ${currentTarget.phone} and email is ${currentTarget.email}.",
                 time = "Just Now"
             )
         )
@@ -318,7 +320,8 @@ fun TaskDiscussionScreen(
             isRead = false
         )
         
-        if (activeChatTarget == null) {
+        val target = activeChatTarget
+        if (target == null) {
             messagesList = messagesList + newMsg
             currentInputText = ""
             activeReplyToMessage = null
@@ -355,7 +358,6 @@ fun TaskDiscussionScreen(
                 scrollToBottom()
             }
         } else {
-            val target = activeChatTarget!!
             val key = target.email
             val currentList = directChatsMap[key] ?: emptyList()
             directChatsMap = directChatsMap + (key to (currentList + newMsg))
@@ -716,7 +718,7 @@ fun TaskDiscussionScreen(
                         }
                         
                         // Option 2...N: Registered Entities
-                        registeredUsers.forEach { user ->
+                        registeredUsers.filter { it.email.lowercase() != (currentUser?.email ?: "").lowercase() }.forEach { user ->
                             val isSelected = activeChatTarget?.email == user.email
                             val initials = user.name.split(" ")
                                 .map { it.trim() }

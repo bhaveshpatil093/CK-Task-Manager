@@ -112,8 +112,8 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
 
         // Sync with employees list
         val currentEmps = _registeredEmployees.value.toMutableList()
-        val exists = currentEmps.any { it.email.lowercase() == cleanedEmail.lowercase() || it.name.lowercase() == cleanedName.lowercase() }
-        if (!exists) {
+        val existingIndex = currentEmps.indexOfFirst { it.email.lowercase() == cleanedEmail.lowercase() || it.name.lowercase() == cleanedName.lowercase() }
+        if (existingIndex == -1) {
             val nextIndex = currentEmps.size
             currentEmps.add(UserProfile(cleanedName, cleanedEmail, cleanedRole, cleanedPhone))
             userSharedPrefs.edit()
@@ -122,6 +122,16 @@ class TaskViewModel(application: Application) : AndroidViewModel(application) {
                 .putString("emp_email_$nextIndex", cleanedEmail)
                 .putString("emp_role_$nextIndex", cleanedRole)
                 .putString("emp_phone_$nextIndex", cleanedPhone)
+                .apply()
+            _registeredEmployees.value = currentEmps
+        } else {
+            // Update existing entry with modified details
+            currentEmps[existingIndex] = UserProfile(cleanedName, cleanedEmail, cleanedRole, cleanedPhone)
+            userSharedPrefs.edit()
+                .putString("emp_name_$existingIndex", cleanedName)
+                .putString("emp_email_$existingIndex", cleanedEmail)
+                .putString("emp_role_$existingIndex", cleanedRole)
+                .putString("emp_phone_$existingIndex", cleanedPhone)
                 .apply()
             _registeredEmployees.value = currentEmps
         }

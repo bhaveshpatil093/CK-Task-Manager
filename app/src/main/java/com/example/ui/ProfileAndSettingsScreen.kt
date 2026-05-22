@@ -751,6 +751,7 @@ fun ProfileAndSettingsScreen(
                                     userDept = tempDept
                                     userPhone = tempPhone
                                     userEmail = tempEmail
+                                    viewModel.registerAndLogin(tempName, tempEmail, tempRole, tempPhone)
                                     showEditProfileDialog = false
                                     triggerToast(context, "Profile successfully updated!")
                                 },
